@@ -1,83 +1,112 @@
-﻿fetch('/api/Movies')
-    .then(response => {
-        if (!response.ok) {
-            throw new Error(`HTTP помилка! Статус: ${response.status}`);
-        }
-        return response.json();
-    })
-    .then(data => {
-        console.log('Movies:', data); // Логирование данных
+﻿document.addEventListener("DOMContentLoaded", function () {
+    const genreDropdown = document.getElementById('genreDropdown');
+    const yearDropdown = document.getElementById('yearDropdown');
+    const ageDropdown = document.getElementById('ageDropdown');
+    const sessionMinDate = document.getElementById('sessionMinDate');
+    const search = document.getElementById('search');
+    const sortRadios = document.querySelectorAll('.filter-radios input[name="grade"]');
 
-        if (!Array.isArray(data)) {
-            console.error('Очікувався масив фільмів');
-            return;
-        }
+    genreDropdown.addEventListener('change', applyFiltersAndSorting)
+    yearDropdown.addEventListener('change', applyFiltersAndSorting)
+    ageDropdown.addEventListener('change', applyFiltersAndSorting)
+    sessionMinDate.addEventListener('change', applyFiltersAndSorting)
+    search.addEventListener('input', applyFiltersAndSorting)
+    sortRadios.forEach(radio => {
+        radio.addEventListener('change', applyFiltersAndSorting);
+    });
 
-        // Додавання фільмів у сітку
-        data.forEach(movie => {
-            const movieCard = document.createElement('div');
-            movieCard.className = 'movie-card visible';
-            movieCard.setAttribute('data-genre', movie.genreName);
 
-            movieCard.innerHTML = `
-                <div class="card-head">
-                    <img src="${movie.posterURL || movie.PosterURL}" alt="movie" class="card-img">
-                    <div class="card-overlay">
-                        <div class="bookmark">
-                            <ion-icon name="bookmark"></ion-icon>
-                        </div>
-                        <div class="rating">
-                            <ion-icon name="star-outline"></ion-icon>
-                            <span>${movie.rating || movie.Rating}</span>
-                        </div>
-                        <div class="play">
-                            <ion-icon name="play-circle-outline"></ion-icon>
-                        </div>
-                    </div>
-                </div>
-                <div class="card-body">
-                    <h3 class="card-title">${movie.title || movie.Title}</h3>
-                    <div class="card-info">
-                        <span class="genre">${movie.genreName}</span> 
-                    </div>
-                    <div class="card-info">
-                        <span class="year">${movie.releaseDate || movie.ReleaseDate}</span>
-                    </div>
-                </div>
-            `;
+    // hide all the initial cards to save them :)
+    const movies = document.querySelectorAll('.movie-card');
+    movies.forEach(movie => movie.style.display = 'none')
 
-            moviesGrid.appendChild(movieCard);
-        });
+    // set the initial value for the date picker in an ugly way :/
+    let today = new Date().toISOString().split('T')[0];
+    document.getElementById("sessionMinDate").value = today;
 
-        // Фільтрація фільмів за жанром
-        genreDropdown.addEventListener('change', function () {
-            const selectedGenre = this.value;
-            const movies = document.querySelectorAll('.movie-card');
+    applyFiltersAndSorting();
+});
 
-            let visibleCount = 0;
+window.onload = function () {
+    applyFiltersAndSorting();
+};
 
-            movies.forEach(movie => {
-                const movieGenre = movie.getAttribute('data-genre');
+function applyFiltersAndSorting() {
+    const moviesGrid = document.getElementById('moviesGrid');
 
-                if (selectedGenre === "all genres" || movieGenre === selectedGenre) {
-                    movie.classList.remove('hidden', 'hide');
-                    movie.classList.add('visible');
-                    visibleCount++;
-                } else {
-                    movie.classList.add('hidden');
-                    movie.classList.remove('visible');
+    // here are visible and hidden cards
+    const initialMovies = Array.from(document.querySelectorAll('.movie-card'));
 
-                    // Через 300 мс після анімації видаляємо з DOM
-                    setTimeout(() => {
-                        movie.classList.add('hide');
-                        moviesGrid.style.display = "grid"; // Примусове оновлення
-                    }, 300);
-                }
-            });
+    // remove all visible cards from previous sorting/filtering
+    const moviesToRemove = [...initialMovies.filter(movie => movie.style.display !== 'none')];
+    moviesToRemove.forEach(movie => {
+        moviesGrid.removeChild(movie);
+    });
 
-            // Автоматичне оновлення висоти гріду, щоб уникнути скачків
-            moviesGrid.style.minHeight = visibleCount > 0 ? `${Math.ceil(visibleCount / 4) * 250}px` : "400px";
-        });
+    // copy the invisible cards
+    const movies = Array.from(document.querySelectorAll('.movie-card')).map(movie => movie.cloneNode(true));
 
-    })
-    .catch(error => console.error('Помилка завантаження фільмів:', error));
+    // Filter and sort the data
+    let moviesToDisplay = [...movies].filter(movie => filterMovie(movie));
+
+    const selectedSort = document.querySelector('.filter-radios input[name="grade"]:checked').id;
+    moviesToDisplay.sort((a, b) => sortMovies(a, b, selectedSort))
+
+    // display the cards
+    moviesToDisplay.forEach(movie => {
+        movie.style.display = 'block'
+        moviesGrid.appendChild(movie);
+    });
+}
+
+function filterMovie(movie) {
+    const selectedGenre = document.getElementById('genreDropdown').value;
+    const selectedYear = document.getElementById('yearDropdown').value;
+    const selectedAge = document.getElementById('ageDropdown').value;
+    const selectedMinDate = document.getElementById('sessionMinDate').value;
+    const selectedName = document.getElementById('search').value;
+
+    const movieYear = parseInt(movie.getAttribute('data-year'));
+    const movieGenre = movie.getAttribute('data-genre');
+    const movieAge = parseInt(movie.getAttribute('data-age'));
+    const sessions = JSON.parse(movie.getAttribute('data-sessions'));
+    const movieName = movie.getAttribute('data-name');
+
+    const genreCondition = selectedGenre === 'all genres' || movieGenre === selectedGenre;
+    const yearCondition = selectedYear === 'all years' || isMovieInYearRange(movieYear, selectedYear);
+    const ageCondition = selectedAge === 'all ages' || parseInt(selectedAge) == movieAge;
+    const dateCondition = isMovieAvailableAfter(sessions, selectedMinDate)
+    const nameCondition = selectedName.trim() === "" || movieName.toLowerCase().includes(selectedName.toLowerCase())
+
+    return genreCondition && yearCondition && ageCondition && dateCondition && nameCondition;
+}
+
+function sortMovies(a, b, sortType) {
+    const ratingA = parseFloat(a.getAttribute('data-rating'));
+    const ratingB = parseFloat(b.getAttribute('data-rating'));
+    const yearA = parseInt(a.getAttribute('data-year'));
+    const yearB = parseInt(b.getAttribute('data-year'));
+
+    switch (sortType) {
+        case "popular": return ratingB - ratingA;
+        case "newest": return yearB - yearA;
+        default: return 0;
+    }
+}
+
+function isMovieInYearRange(movieYear, yearRange) {
+    if (isNaN(movieYear)) return false;
+
+    switch (yearRange) {
+        case "2025": return movieYear === 2025;
+        case "2020-2024": return movieYear >= 2020 && movieYear <= 2024;
+        case "2010-2019": return movieYear >= 2010 && movieYear <= 2019;
+        case "2000-2009": return movieYear >= 2000 && movieYear <= 2009;
+        case "1980-1999": return movieYear >= 1980 && movieYear <= 1999;
+        default: return true;
+    }
+}
+
+function isMovieAvailableAfter(sessions, minDate) {
+    return sessions.filter(session => session.date >= minDate).length > 0
+}
